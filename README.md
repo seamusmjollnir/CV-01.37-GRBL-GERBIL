@@ -1,4 +1,5 @@
 # The CV-01.37 GRBL GERBIL
+<img width="400" height="400" alt="gerbil" src="https://github.com/user-attachments/assets/93d09caf-0d3a-42a4-b209-d982713bff9c" />
 
 ### The free, no-bullshit laser engraving control application built specifically for the Creality CV-01 Pro
 
