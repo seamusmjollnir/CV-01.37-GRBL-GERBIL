@@ -898,6 +898,8 @@ export default function LaserMasterBlaster() {
   const [jobState, setJobState] = useState("idle");
   const [drawing, setDrawing] = useState(null);
   const [jogStep, setJogStep] = useState(10);
+  const [frameRepeat, setFrameRepeat] = useState(1);
+  const [laserPointer, setLaserPointer] = useState(false);
   const [textInput, setTextInput] = useState("LASER");
   const [fontFamily, setFontFamily] = useState("monospace");
   const [textSize, setTextSize] = useState(14);
@@ -1563,19 +1565,49 @@ export default function LaserMasterBlaster() {
   };
   const homeAll = () => { setMachinePos({ x: 0, y: 0 }); sendGrbl("$H"); };
 
+  const centerLaser = () => {
+    const cx = (BED_W / 2).toFixed(2);
+    const cy = (BED_H / 2).toFixed(2);
+    log("⊕ Moving to bed center (" + cx + ", " + cy + ")");
+    sendGrbl("G21");
+    sendGrbl("G90");
+    sendGrbl("G0 X" + cx + " Y" + cy + " F3000");
+    setMachinePos({ x: BED_W / 2, y: BED_H / 2 });
+  };
+
+  const toggleLaserPointer = () => {
+    if (laserPointer) {
+      sendGrbl("M5 S0");
+      setLaserPointer(false);
+      log("🔴 Laser pointer OFF");
+    } else {
+      sendGrbl("M4 S13");
+      setLaserPointer(true);
+      log("🟢 Laser pointer ON (5% / S13)");
+    }
+  };
+
   const runFrame = async () => {
+    const reps = Math.max(1, Math.floor(frameRepeat));
     const fc = generateFrameGcode(objects);
-    log("▶ Frame preview");
+    log("▶ Frame preview ×" + reps);
     if (!serialConn) {
       log("(no serial — frame gcode generated, see console)");
       log(fc);
       return;
     }
-    for (const line of fc.split("\n").filter(l => l && !l.startsWith(";"))) {
-      await sendSerialRaw(line);
-      await new Promise(r => setTimeout(r, 10));
+    for (let rep = 0; rep < reps; rep++) {
+      if (reps > 1) log("  trace " + (rep + 1) + "/" + reps);
+      const lines = fc.split("\n").filter(l => l && !l.startsWith(";"));
+      for (let i = 0; i < lines.length; i++) {
+        const line = lines[i];
+        if (line === "M2" && rep < reps - 1) continue;
+        if (line.startsWith("G0 X0 Y0") && rep < reps - 1) continue;
+        await sendSerialRaw(line);
+        await new Promise(r => setTimeout(r, 10));
+      }
     }
-    log("✓ Frame complete");
+    log("✓ Frame complete (" + reps + " pass" + (reps > 1 ? "es" : "") + ")");
   };
 
   // ═══ CANVAS INTERACTION ═════════════════════════════════
@@ -2314,9 +2346,31 @@ export default function LaserMasterBlaster() {
                   <button style={s.btn("danger")} onClick={stopJob} disabled={jobState === "idle"}><StopCircle size={12} /> Stop</button>
                   <button style={s.btn()} onClick={homeAll}><Home size={12} /> Home</button>
                 </div>
-                <button style={{ ...s.btn("ok"), width: "100%", marginTop: 5, justifyContent: "center" }} onClick={runFrame}>
-                  <Frame size={12} /> Frame Preview (8% power)
-                </button>
+                <div style={{ marginTop: 8 }}>
+                  <div style={s.sectHdr}>Positioning</div>
+                  <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 5 }}>
+                    <button style={{ ...s.btn("primary"), justifyContent: "center" }} onClick={centerLaser} title="Move laser to bed center (85, 100)">
+                      <Crosshair size={12} /> Center
+                    </button>
+                    <button style={{ ...s.btn(laserPointer ? "danger" : undefined), justifyContent: "center" }} onClick={toggleLaserPointer} title="Toggle laser pointer at 5% power for visibility">
+                      <Power size={12} /> {laserPointer ? "Pointer ON" : "Pointer OFF"}
+                    </button>
+                  </div>
+                </div>
+
+                <div style={{ marginTop: 8 }}>
+                  <div style={s.sectHdr}>Frame / Trace</div>
+                  <div style={{ display: "flex", alignItems: "center", gap: 5, marginBottom: 5 }}>
+                    <label style={{ fontSize: 10, color: "#aaa", whiteSpace: "nowrap" }}>Repeat:</label>
+                    <input type="number" min={1} max={99} value={frameRepeat}
+                      onChange={e => setFrameRepeat(Math.max(1, parseInt(e.target.value) || 1))}
+                      style={{ width: 45, background: "#111", color: "#e94560", border: "1px solid #333", borderRadius: 4, padding: "3px 5px", fontSize: 11, textAlign: "center" }} />
+                    <span style={{ fontSize: 9, color: "#666" }}>pass{frameRepeat > 1 ? "es" : ""}</span>
+                  </div>
+                  <button style={{ ...s.btn("ok"), width: "100%", justifyContent: "center" }} onClick={runFrame} title={"Trace outline of all objects at 8% power, " + frameRepeat + " time(s)"}>
+                    <Frame size={12} /> Trace Outline {frameRepeat > 1 ? "(×" + frameRepeat + ")" : "(8% power)"}
+                  </button>
+                </div>
 
                 {selectedObj && (
                   <>
